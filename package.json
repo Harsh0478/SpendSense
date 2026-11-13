@@ -1,0 +1,20 @@
+{
+  "name": "spendsense",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "mobile",
+    "server",
+    "packages/shared"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspace mobile && npm run typecheck --workspace server",
+    "dev:mobile": "npm run start --workspace mobile",
+    "dev:server": "npm run dev --workspace server",
+    "check:config": "node scripts/check-config.mjs",
+    "check:smoke": "node scripts/smoke-check.mjs",
+    "check:phase45": "node scripts/phase45-check.mjs",
+    "check:pre-final": "node scripts/pre-final-check.mjs",
+    "check:feature-upgrade": "node scripts/feature-upgrade-check.mjs"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "SpendSense",
+    "slug": "spendsense",
+    "scheme": "spendsense",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.spendsense.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#052F32"
+      }
+    },
+    "plugins": [
+      "expo-dev-client"
+    ]
+  }
+}

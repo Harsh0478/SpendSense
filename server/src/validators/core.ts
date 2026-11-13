@@ -1,0 +1,4 @@
+import { z } from 'zod';
+export const accountSchema = z.object({ name: z.string().trim().min(1).max(80), type: z.enum(['CASH','BANK','UPI','CREDIT_CARD','WALLET','OTHER']), institution: z.string().trim().max(100).optional(), openingBalancePaise: z.number().int().min(0).default(0), isArchived: z.boolean().default(false) });
+export const categoryInputSchema = z.object({ name: z.string().trim().min(1).max(60), type: z.enum(['DEBIT','CREDIT','BOTH']).default('BOTH'), icon: z.string().max(40).default('tag'), color: z.string().max(20).default('#8B7CF6') });
+export const budgetInputSchema = z.object({ category: z.string().trim().min(1).max(60), limitPaise: z.number().int().positive(), month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), alertAtPercent: z.number().int().min(1).max(100).default(80) });

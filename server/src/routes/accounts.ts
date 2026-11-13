@@ -1,0 +1,11 @@
+import { Router } from 'express';
+import { Account } from '../models/Account.js';
+import { Transaction } from '../models/Transaction.js';
+import { accountSchema } from '../validators/core.js';
+import type { AuthenticatedRequest } from '../middleware/requireAuth.js';
+export const accountRouter = Router();
+const uid = (req: any) => (req as AuthenticatedRequest).authUserId!;
+accountRouter.get('/', async (req,res,next) => { try { const owner=uid(req); const rows=await Account.find({ownerUserId:owner,isArchived:{$ne:true}}).sort({createdAt:1}).lean(); const ids=rows.map((item)=>item._id); const totals=ids.length?await Transaction.aggregate([{ $match:{ownerUserId:owner,accountId:{ $in:ids }}},{ $group:{_id:{accountId:'$accountId',type:'$type'},totalPaise:{ $sum:'$amountPaise' }}}]):[]; const byAccount=new Map<string,{credit:number;debit:number}>(); for(const entry of totals){const id=String(entry._id.accountId);const current=byAccount.get(id)??{credit:0,debit:0};if(entry._id.type==='CREDIT')current.credit=entry.totalPaise;else current.debit=entry.totalPaise;byAccount.set(id,current);} return res.json({data:rows.map((account)=>{const total=byAccount.get(String(account._id))??{credit:0,debit:0};return {...account,balancePaise:account.openingBalancePaise+total.credit-total.debit};})}); } catch(e){return next(e);} });
+accountRouter.post('/', async (req,res,next) => { try { const body=accountSchema.parse(req.body); const row=await Account.create({...body,ownerUserId:uid(req)}); return res.status(201).json({data:row}); } catch(e){return next(e);} });
+accountRouter.patch('/:id', async (req,res,next) => { try { const body=accountSchema.partial().parse(req.body); const row=await Account.findOneAndUpdate({_id:req.params.id,ownerUserId:uid(req)},body,{new:true,runValidators:true}); if(!row)return res.status(404).json({error:'NOT_FOUND'}); return res.json({data:row}); } catch(e){return next(e);} });
+accountRouter.delete('/:id', async (req,res,next) => { try { const row=await Account.findOneAndUpdate({_id:req.params.id,ownerUserId:uid(req)},{isArchived:true},{new:true}); if(!row)return res.status(404).json({error:'NOT_FOUND'}); return res.json({data:row}); } catch(e){return next(e);} });

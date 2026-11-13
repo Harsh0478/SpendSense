@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import { Budget } from '../models/Budget.js';
+import { Transaction } from '../models/Transaction.js';
+import { budgetInputSchema } from '../validators/core.js';
+import type { AuthenticatedRequest } from '../middleware/requireAuth.js';
+export const budgetRouter = Router();
+const uid=(req:any)=>(req as AuthenticatedRequest).authUserId!;
+budgetRouter.get('/',async(req,res,next)=>{try{const user=uid(req);const month=typeof req.query.month==='string'?req.query.month:new Date().toISOString().slice(0,7);if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))return res.status(400).json({error:'INVALID_MONTH'});const budgets=await Budget.find({ownerUserId:user,month}).lean();const start=new Date(`${month}-01T00:00:00.000Z`);const end=new Date(start);end.setUTCMonth(end.getUTCMonth()+1);const spend=await Transaction.aggregate([{ $match:{ownerUserId:user,type:'DEBIT',occurredAt:{$gte:start,$lt:end}}},{ $group:{_id:'$category',spentPaise:{$sum:'$amountPaise'}}}]);const map=new Map(spend.map(x=>[x._id,x.spentPaise]));return res.json({data:budgets.map(b=>({...b,spentPaise:map.get(b.category)||0}))});}catch(e){return next(e);}});
+budgetRouter.post('/',async(req,res,next)=>{try{const body=budgetInputSchema.parse(req.body);const row=await Budget.findOneAndUpdate({ownerUserId:uid(req),category:body.category,month:body.month},{$set:body,$setOnInsert:{ownerUserId:uid(req)}},{new:true,upsert:true,runValidators:true});return res.status(201).json({data:row});}catch(e){return next(e);}});
+budgetRouter.delete('/:id',async(req,res,next)=>{try{const row=await Budget.findOneAndDelete({_id:req.params.id,ownerUserId:uid(req)});if(!row)return res.status(404).json({error:'NOT_FOUND'});return res.status(204).send();}catch(e){return next(e);}});

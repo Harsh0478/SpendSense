@@ -1,0 +1,11 @@
+import { Router } from 'express';
+import { CategoryModel } from '../models/Category.js';
+import { Transaction } from '../models/Transaction.js';
+import { categoryInputSchema } from '../validators/core.js';
+import type { AuthenticatedRequest } from '../middleware/requireAuth.js';
+export const categoryRouter = Router();
+const uid = (req: any) => (req as AuthenticatedRequest).authUserId!;
+categoryRouter.get('/',async(req,res,next)=>{try{return res.json({data:await CategoryModel.find({ownerUserId:uid(req)}).sort({isDefault:-1,name:1}).lean()});}catch(e){return next(e);}});
+categoryRouter.post('/',async(req,res,next)=>{try{const body=categoryInputSchema.parse(req.body);const row=await CategoryModel.create({...body,ownerUserId:uid(req),isDefault:false});return res.status(201).json({data:row});}catch(e){return next(e);}});
+categoryRouter.patch('/:id',async(req,res,next)=>{try{const body=categoryInputSchema.partial().parse(req.body);const row=await CategoryModel.findOneAndUpdate({_id:req.params.id,ownerUserId:uid(req),isDefault:false},body,{new:true,runValidators:true});if(!row)return res.status(404).json({error:'NOT_FOUND_OR_DEFAULT'});return res.json({data:row});}catch(e){return next(e);}});
+categoryRouter.delete('/:id',async(req,res,next)=>{try{const row=await CategoryModel.findOne({_id:req.params.id,ownerUserId:uid(req),isDefault:false});if(!row)return res.status(404).json({error:'NOT_FOUND_OR_DEFAULT'});if(await Transaction.exists({ownerUserId:uid(req),category:row.name}))return res.status(409).json({error:'CATEGORY_IN_USE',message:'This category is used by existing transactions and cannot be deleted.'});await row.deleteOne();return res.status(204).send();}catch(e){return next(e);}});
