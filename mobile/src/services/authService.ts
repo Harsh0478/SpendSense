@@ -1,7 +1,7 @@
 import { API_BASE_URL } from './networkConfig';
 
 export type AuthUser = { id: string; name: string; email: string };
-export type AuthResponse = { token: string; user: AuthUser };
+export type AuthResponse = { token: string; user: AuthUser; isNewAccount?: boolean };
 
 export class AuthRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); this.name = 'AuthRequestError'; }

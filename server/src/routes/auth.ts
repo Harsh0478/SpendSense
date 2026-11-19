@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
@@ -15,7 +15,101 @@ const DEFAULT_CATEGORIES = [
 const registerSchema = z.object({ name: z.string().trim().min(2).max(80), email: z.string().trim().email().max(254), password: z.string().min(8).max(72) });
 const loginSchema = z.object({ email: z.string().trim().email(), password: z.string().min(1).max(72) });
 function tokenFor(id: string) { if (!env.JWT_SECRET) throw new Error('JWT_SECRET is not configured'); return jwt.sign({ sub: id }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] }); }
-authRouter.post('/register', async (req,res,next) => { try { const input=registerSchema.parse(req.body); const email=input.email.toLowerCase(); if(await User.exists({email})) return res.status(409).json({error:'EMAIL_EXISTS',message:'An account with this email already exists.'}); const passwordHash=await bcrypt.hash(input.password,12); const user=await User.create({name:input.name,email,passwordHash}); await CategoryModel.insertMany(DEFAULT_CATEGORIES.map((category) => ({ ...category, ownerUserId: String(user._id), isDefault: true }))); return res.status(201).json({token:tokenFor(String(user._id)),user:{id:String(user._id),name:user.name,email:user.email}}); } catch(e){return next(e);} });
+/**
+ * Seed categories idempotently. Registration can be retried after a serverless
+ * timeout or a previous partial write, so insertMany() is not safe here:
+ * it fails as soon as it encounters an already-created unique category.
+ */
+async function ensureDefaultCategories(userId: string) {
+  const operations = DEFAULT_CATEGORIES.map((category) => ({
+    updateOne: {
+      filter: { ownerUserId: userId, name: category.name },
+      update: { $setOnInsert: { ...category, ownerUserId: userId, isDefault: true } },
+      upsert: true,
+    },
+  }));
+
+  try {
+    await CategoryModel.bulkWrite(operations, { ordered: false });
+  } catch (error) {
+    // Concurrent retries may race on the unique (ownerUserId, name) index.
+    // The first write may have succeeded partially; replaying the upserts is safe.
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 11000) {
+      await CategoryModel.bulkWrite(operations, { ordered: false });
+      return;
+    }
+    throw error;
+  }
+}
+
+function registrationResponse(res: Response, user: { _id: unknown; name: string; email: string }, status: number, isNewAccount: boolean) {
+  const id = String(user._id);
+  return res.status(status).json({
+    token: tokenFor(id),
+    user: { id, name: user.name, email: user.email },
+    isNewAccount,
+  });
+}
+
+authRouter.post('/register', async (req, res, next) => {
+  try {
+    const input = registerSchema.parse(req.body);
+    const email = input.email.toLowerCase();
+
+    // Recover a previous registration that created the user but did not
+    // finish category initialization. Only the correct password can resume it.
+    let user = await User.findOne({ email }).select('+passwordHash');
+    if (user) {
+      const passwordMatches = await bcrypt.compare(input.password, user.passwordHash);
+      if (!passwordMatches) {
+        return res.status(409).json({
+          error: 'EMAIL_EXISTS',
+          message: 'An account with this email already exists. Please log in instead.',
+        });
+      }
+      await ensureDefaultCategories(String(user._id));
+      return registrationResponse(res, user, 200, false);
+    }
+
+    const passwordHash = await bcrypt.hash(input.password, 12);
+    try {
+      user = await User.create({ name: input.name, email, passwordHash });
+    } catch (error) {
+      // Two requests can pass the initial lookup concurrently. If the other
+      // request won the unique email index, recover it like a normal retry.
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 11000) {
+        const existing = await User.findOne({ email }).select('+passwordHash');
+        if (existing && await bcrypt.compare(input.password, existing.passwordHash)) {
+          await ensureDefaultCategories(String(existing._id));
+          return registrationResponse(res, existing, 200, false);
+        }
+        return res.status(409).json({
+          error: 'EMAIL_EXISTS',
+          message: 'An account with this email already exists. Please log in instead.',
+        });
+      }
+      throw error;
+    }
+
+    try {
+      await ensureDefaultCategories(String(user._id));
+    } catch (error) {
+      // Do not leave an account behind when first-time setup did not complete.
+      // The categories belong only to this newly created user.
+      await CategoryModel.deleteMany({ ownerUserId: String(user._id) }).catch((cleanupError) => {
+        console.error('Registration category cleanup failed:', cleanupError instanceof Error ? cleanupError.message : 'Unknown error');
+      });
+      await User.deleteOne({ _id: user._id }).catch((cleanupError) => {
+        console.error('Registration user cleanup failed:', cleanupError instanceof Error ? cleanupError.message : 'Unknown error');
+      });
+      throw error;
+    }
+
+    return registrationResponse(res, user, 201, true);
+  } catch (error) {
+    return next(error);
+  }
+});
 authRouter.post('/login', async (req,res,next) => { try { const input=loginSchema.parse(req.body); const user=await User.findOne({email:input.email.toLowerCase()}).select('+passwordHash'); if(!user || !(await bcrypt.compare(input.password,user.passwordHash))) return res.status(401).json({error:'INVALID_CREDENTIALS',message:'Email or password is incorrect.'}); return res.json({token:tokenFor(String(user._id)),user:{id:String(user._id),name:user.name,email:user.email}}); } catch(e){return next(e);} });
 
 

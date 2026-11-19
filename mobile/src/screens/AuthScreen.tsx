@@ -24,7 +24,7 @@ export default function AuthScreen({ onAuthenticated }: Props) {
       const result = await authenticate(mode === 'login' ? '/login' : '/register', mode === 'login'
         ? { email: normalizedEmail, password }
         : { name: name.trim(), email: normalizedEmail, password });
-      await onAuthenticated(result.token, result.user, mode === 'register');
+      await onAuthenticated(result.token, result.user, mode === 'register' && result.isNewAccount !== false);
     } catch (error) {
       Alert.alert('Unable to continue', error instanceof Error ? error.message : 'Please try again.');
     } finally { setBusy(false); }
