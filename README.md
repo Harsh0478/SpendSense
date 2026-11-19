@@ -17,6 +17,11 @@ Phase 4/5 backend foundations include CSV and text-PDF parsing, user-scoped dedu
 - Android development build for native device testing
 - Gemini API key for AI features
 
+## Publish future updates
+Whenever you change your app's UI, screens, or TypeScript logic, run:
+
+eas update --channel preview --message "SpendSense improvements"
+
 ## Install
 
 Run from the repository root:
